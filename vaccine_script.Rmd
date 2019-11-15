@@ -1,0 +1,389 @@
+---
+title: "Factors associated with Vaccine hesitancy in the EU, and Small Area Estimation"
+author: "Peralta santos"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Specifications and loading libraries 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  echo = FALSE,
+  eval = TRUE
+  )
+
+set.seed(1) # Set the seed is important for getting reproducible reports 
+## Clean the envorment 
+# rm(list=ls())
+options(scipen=4)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+library(tidyverse)## Versatile package for data analysis
+library(survey)
+library(srvyr)
+library(purrr)
+
+set.seed(1) # Set the seed is important for getting reproducible reports 
+## Clean the envorment 
+# rm(list=ls())
+options(scipen=4)
+```
+
+## Load the data
+
+```{r}
+data <- read_dta("ZA7562_v1-0-0.dta")
+```
+
+```{r}
+data.f <- data %>%
+  dplyr::select(
+    caseid, 
+    country, 
+    isocntry, 
+    d11, 
+    q1_1:q1_30,
+    qc1_1:qc12_8,
+    p7be:p7hu_r,
+    d1:d77,
+    nuts, nutslvl,
+    w1:w86
+  )
+
+data.f <- as.data.frame(data.f)  
+```
+
+## Create the vaccine hesitancy variable 
+
+```{r}
+# Question qc7 
+# c7_1 Vaccines overload and weaken the immune system 1==TRUE
+# c7_1 Vaccines can cause the disease against which they protect 1==TRUE
+# c7_1 Vaccines can often produce serious side-effects 1==TRUE
+# c7_1 Vaccines are rigorously tested before being authorised for use 2==FALSE
+data.f <- data.f %>%
+  mutate (
+    # At least one positive hesitancy response (high or low vaccine hesitancy)
+    hesitancy_vac1 = (
+      ifelse( qc7_1==1 | qc7_2==1 | qc7_3==1 | qc7_4==2, 1,0)
+  ),
+  # All positive hesitancy response (higher vaccine hesitancy)
+  hesitancy_vac2 = (
+      ifelse( qc7_1==1 & qc7_2==1 & qc7_3==1 & qc7_4==2, 1,0)
+  )
+  )
+```
+
+
+### Setting survey dataframe
+```{r, echo=TRUE, message=FALSE, warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=40)}
+library(survey)
+dstrat_srvyr <- svydesign(ids=~1,
+                          weights=~w23 ,
+                          strata=~nuts, 
+                          data=data.f)
+
+```
+
+## Weighted estimates 
+## D1 In political matters people talk of "the left" and "the right". How would you place your views on this scale?
+
+```{r}
+#1 Left
+#10 Right
+political <- svyby(~hesitancy_vac2, 
+                      ~d1r2, 
+                      dstrat_srvyr, 
+                      svymean,
+                      vartype="ci",
+                      method="logit",
+                      keep.var=TRUE)
+```
+
+## D7 Which of the following best corresponds to your own current situation?
+
+```{r}
+marital <- svyby(~hesitancy_vac2, 
+                      ~d7r3, 
+                      dstrat_srvyr, 
+                      svymean,
+                      vartype="ci",
+                      method="logit",
+                      keep.var=TRUE)
+```
+
+## D8 Education
+
+```{r}
+education <- svyby(~hesitancy_vac2, 
+                      ~d8r2, 
+                      dstrat_srvyr, 
+                      svymean,
+                      vartype="ci",
+                      method="logit",
+                      keep.var=TRUE)
+```
+
+## D10 Gender
+
+```{r}
+#1 Man
+#2 Woman
+gender <- svyby(~hesitancy_vac2, 
+                      ~d10, 
+                      dstrat_srvyr, 
+                      svymean,
+                      vartype="ci",
+                      method="logit",
+                      keep.var=TRUE)
+
+```
+
+## D15 Occupation
+
+```{r}
+occupation <- svyby(~hesitancy_vac2, 
+                      ~d15a_r1, 
+                      dstrat_srvyr, 
+                      svymean,
+                      vartype="ci",
+                      method="logit",
+                      keep.var=TRUE)
+```
+
+## D25 Rural or urban
+
+```{r}
+#1 Rural area or village
+#2Small or middle sized town
+#3Large town
+#DK 
+urban <- svyby(~hesitancy_vac2, 
+                      ~d25, 
+                      dstrat_srvyr, 
+                      svymean,
+                      vartype="ci",
+                      method="logit",
+                      keep.var=TRUE)
+```
+
+## D63 By Do you see yourself and your household belonging to...?
+
+```{r}
+#1 The working class of society
+#2 The lower middle class of society
+#3 The middle class of society
+#4 The upper middle class of society
+#5 The higher class of society
+
+social_class <- svyby(~hesitancy_vac2, 
+                      ~d63, 
+                      dstrat_srvyr, 
+                      svymean,
+                      vartype="ci",
+                      method="logit",
+                      keep.var=TRUE)
+```
+
+## D77 When you hold a strong opinion, do you ever find yourself persuading your friends, relatives or fellow workers to share your views? Does this happen...?
+
+```{r}
+#O1 ften
+#2 From time to time
+#3 Rarely
+#4 Never
+#5 DK
+
+persuading <- svyby(~hesitancy_vac2, 
+                      ~d77, 
+                      dstrat_srvyr, 
+                      svymean,
+                      vartype="ci",
+                      method="logit",
+                      keep.var=TRUE)
+
+```
+
+## Regression 
+```{r}
+glm_result <- 
+    svyglm( 
+        hesitancy_vac2 ~ 
+          as.factor(d1r2) + # Political view
+          as.factor(d8r2) + # education
+          as.factor(d63) + # social_class
+          as.factor(d10) + #Gender
+          as.factor(d77), # persuading
+        dstrat_srvyr 
+    )
+
+```
+
+```{r}
+library(broom)
+
+table_m1 <- tidy(glm_result, 
+                 conf.int=TRUE, 
+                 exponentiate = TRUE)
+
+table_m1
+```
+
+# Small area estimation 
+## Naive estimates
+
+```{r, echo=TRUE, message= FALSE, warning= FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=40)}
+data.f <- subset(data, !is.na(data.f$hesitancy_vac2))
+data.f <- subset(data, !is.na(data.f$nuts))
+names(data.f)[names(data.f)=='wex'] <- 'strata'
+n.area <- length(unique(data.f$nuts))
+```
+
+\small
+```{r, echo=TRUE, message= FALSE, warning= FALSE, tidy=TRUE,fig.show="hide",tidy.opts=list(width.cutoff=40)}
+
+hras <- as.character(unique(data.f$nuts))
+props <- matrix(NA,nrow=n.area,ncol=5)
+props <- as.data.frame(props)
+colnames(props) <- c("nuts","p.hat","se.p.hat","y.i","n.i")
+props[,1] <- hras
+for(i in 1:n.area){
+  props[i,'p.hat'] <- mean(data.f[data.f$nuts == props[i,'nuts'],'hesitancy_vac2'])
+  props[i,'y.i'] <- sum(data.f[data.f$nuts ==  props[i,'nuts'],'hesitancy_vac2'])
+  props[i,'n.i'] <- length(data.f[data.f$nuts == props[i,'nuts'],'nuts'])
+  naivevar <- props[i,'p.hat']*(1-props[i,'p.hat'])/props[i,'n.i']
+  props[i,'se.p.hat'] <- sqrt(naivevar)
+}
+```
+
+
+## Weighted estimates
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=40)}
+
+p.i <- svyby(~hesitancy_vac2,
+             ~nuts,dstrat_srvyr,
+             svymean)$hesitancy_vac2
+
+dv.i <- svyby(~hesitancy_vac2,
+              ~nuts,
+              dstrat_srvyr,
+              svymean)$se^2
+
+logit.pi <- log(p.i/(1-p.i))
+v.i <- dv.i/(p.i^2*(1-p.i)^2)
+```
+
+## Construct data frame for INLA
+
+\small
+```{r, echo=TRUE, message=FALSE, warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=40)}
+
+data <- matrix(NA,nrow=n.area,ncol=1)
+data <- as.data.frame(data)
+colnames(data)[1] <- "unstruct"
+data$hracode <- as.character(unique(data.f$nuts))
+data$p.i <- p.i
+data$dv.i <- dv.i
+data$v.i <- v.i
+data$logit.pi <- logit.pi
+data$logit.prec <- 1/v.i
+data <- data[order(data$hracode),]
+data$unstruct <- 1:(n.area)
+data$struct <- 1:(n.area)
+```
+
+
+# MAPPING 
+##### https://rpubs.com/adam_dennett/8955
+
+```{r}
+#install.packages(c("rgdal", 
+#                   "RColorBrewer", 
+#                   "sp", 
+#                   "GISTools", "
+#                   classInt", 
+#                   "maptools", 
+#                   "SmarterPoland"))
+```
+
+```{r}
+library("rgdal")
+library("RColorBrewer")
+library("sp")
+library("GISTools")
+library("classInt")
+library("maptools")
+library("SmarterPoland")
+library("raster")
+```
+
+```{r}
+EU_NUTS <- readOGR(dsn = "NUTS_2.shp", layer = "NUTS_RG_01M_2016_4326_LEVL_2")
+
+# EU_NUTS3 <- readOGR(dsn = "NUTS_3.shp", layer = "NUTS_RG_01M_2016_4326_LEVL_3")
+
+# use union in {raster} package ?raster::union
+# EU_NUTS<-union(EU_NUTS2, EU_NUTS3, makeUniqueIDs = TRUE)
+
+
+```
+
+## Set INLA 
+```{r, echo = TRUE, message = FALSE, warning = FALSE, tidy = TRUE, tidy.opts = list(width.cutoff=40)}
+library(spdep)
+EU_NUTS.neigh <- poly2nb(EU_NUTS)
+library(INLA)
+nb2INLA('EU_NUTS.neigh.graph',EU_NUTS.neigh)
+```
+
+
+## Fit global/local spatial smoothing model
+
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE, tidy = TRUE, tidy.opts = list(width.cutoff=40)}
+formula = logit.pi ~ 1 + 
+  f(struct, model='besag', 
+    adjust.for.con.comp=TRUE, 
+    constr=TRUE, 
+    graph='EU_NUTS.neigh.graph') + 
+  f(unstruct,model='iid', 
+    param=c(0.5,0.008))
+
+mod.smooth <- inla(formula, 
+                   family = "gaussian", 
+                   data = data, 
+                  control.predictor = list(compute = TRUE),
+  control.family = list( hyper = list(prec = list( initial = log(1), fixed=TRUE))), 
+scale=logit.prec)
+
+# The model does not converge 
+```
+
+# Merge MAP and Data with weights
+```{r}
+EU_NUTS@data = data.frame(EU_NUTS@data, data[match(EU_NUTS@data[, "NUTS_ID"], 
+    data[, "hracode"]), ])
+```
+
+```{r}
+my_colours <- brewer.pal(5, "RdPu")
+
+breaks <- classIntervals(EU_NUTS@data$p.i, n = 5, style = "fisher", 
+    unique = TRUE)$brks
+
+plot <- plot(EU_NUTS, col = my_colours[findInterval(EU_NUTS@data$p.i, 
+    breaks, all.inside = TRUE)], axes = FALSE, border = NA)
+```
+
+
+
+
+
+
+
