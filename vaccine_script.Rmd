@@ -27,6 +27,7 @@ library(tidyverse)## Versatile package for data analysis
 library(survey)
 library(srvyr)
 library(purrr)
+library(haven)
 
 set.seed(1) # Set the seed is important for getting reproducible reports 
 ## Clean the envorment 
